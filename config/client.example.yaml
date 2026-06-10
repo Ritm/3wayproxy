@@ -1,0 +1,24 @@
+session:
+  churn_interval_sec: [2, 5]
+  rotate_interval_sec: [3, 8]
+  idle_pause_ms: 1000
+
+relays:
+  - url: https://game-a.example/
+    ws: wss://game-a.example/ws/play
+    shard_id: 0
+  - url: https://game-b.example/
+    ws: wss://game-b.example/ws/play
+    shard_id: 1
+  - url: https://game-c.example/
+    ws: wss://game-c.example/ws/play
+    shard_id: 2
+
+browser:
+  profile_dir: ~/.3wayproxy/chrome
+  headless: true
+  stealth: true
+
+tun:
+  name: tun0
+  mtu: 1200

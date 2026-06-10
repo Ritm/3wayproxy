@@ -1,0 +1,26 @@
+services:
+  relay-a:
+    build: ../relay
+    ports:
+      - "8001:8000"
+    environment:
+      RELAY_SHARD_ID: "0"
+
+  relay-b:
+    build: ../relay
+    ports:
+      - "8002:8000"
+    environment:
+      RELAY_SHARD_ID: "1"
+
+  relay-c:
+    build: ../relay
+    ports:
+      - "8003:8000"
+    environment:
+      RELAY_SHARD_ID: "2"
+
+  # aggregator:
+  #   build: ../aggregator
+  #   cap_add: [NET_ADMIN]
+  #   privileged: true

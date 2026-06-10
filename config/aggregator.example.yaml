@@ -1,0 +1,20 @@
+relays:
+  - id: 0
+    spectator_ws: wss://game-a.example/ws/spectator
+    token_env: RELAY_A_TOKEN
+  - id: 1
+    spectator_ws: wss://game-b.example/ws/spectator
+    token_env: RELAY_B_TOKEN
+  - id: 2
+    spectator_ws: wss://game-c.example/ws/spectator
+    token_env: RELAY_C_TOKEN
+
+cdn:
+  listen: ":8443"
+  paths:
+    - /libs/jquery-3.7.1.min.js
+    - /libs/game-stats.js
+
+tun:
+  name: tun1
+  nat: true
