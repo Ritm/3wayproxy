@@ -56,7 +56,7 @@ sudo ./bin/3wayproxy-client -config config/client.dev.browser.yaml
 
 ## Дальше (в этой фазе)
 
-- [ ] Змейка на canvas + autoplay между fragment sends
+- [x] Шахматы на `/` — анонимное лобби (active probing), см. [RUNBOOK.md](RUNBOOK.md)
 - [ ] playwright-stealth / меньше headless-отпечатков
 - [ ] Decoy fetch `/api/score` при churn
 

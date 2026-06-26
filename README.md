@@ -81,4 +81,4 @@ make relay-docker
 | Go aggregator TUN+NAT | фаза 1 |
 | 3 relay + ротация 2+1 | готово — [PHASE2.md](docs/PHASE2.md) |
 | Chromium carrier (stub) | в работе — [PHASE3.md](docs/PHASE3.md) |
-| Игра-змейка (cover) | позже в фазе 3 |
+| Шахматы (active probing) | [RUNBOOK.md](docs/RUNBOOK.md) |

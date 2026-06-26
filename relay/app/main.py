@@ -11,9 +11,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.chess import register as register_chess
 from app.protocol import (
     build_handshake_ack,
     is_fragment,
@@ -32,6 +33,7 @@ app = FastAPI(title="3wayproxy relay", docs_url=None, redoc_url=None)
 
 if GAME_ROOT.is_dir():
     app.mount("/game", StaticFiles(directory=str(GAME_ROOT)), name="game")
+    register_chess(app, GAME_ROOT)
 
 
 @dataclass
@@ -47,17 +49,6 @@ _sessions: dict[int, SessionHub] = defaultdict(SessionHub)
 
 def _hub(session_id: int) -> SessionHub:
     return _sessions[session_id]
-
-
-@app.get("/")
-async def index() -> HTMLResponse:
-    return HTMLResponse(
-        "<!doctype html><html><head><title>Game</title></head>"
-        "<body><h1>3wayproxy relay</h1>"
-        "<p>Phase 3: carrier page at <a href=\"/play.html\">/play.html</a> "
-        "(snake game cover — later).</p>"
-        "</body></html>"
-    )
 
 
 @app.get("/play.html")

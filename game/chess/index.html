@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Шахматы — анонимная игра</title>
+  <link rel="stylesheet" href="/game/chess/style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>♟ Анонимные шахматы</h1>
+    <p class="tagline">Без регистрации — создайте стол или присоединитесь к ожидающему игроку</p>
+  </header>
+
+  <main>
+    <section id="lobby" class="panel">
+      <div id="lobby-empty">
+        <h2>Новая игра</h2>
+        <p>Выберите цвет и ждите соперника:</p>
+        <div class="btn-row">
+          <button type="button" id="btn-host-white" class="btn primary">Играть белыми</button>
+          <button type="button" id="btn-host-black" class="btn primary">Играть чёрными</button>
+        </div>
+      </div>
+      <div id="lobby-waiting" class="hidden">
+        <h2>Ожидание соперника…</h2>
+        <p>Вы играете за <strong id="my-color-label">—</strong>. Поделитесь ссылкой на эту страницу.</p>
+        <button type="button" id="btn-cancel-wait" class="btn">Отменить</button>
+      </div>
+      <div id="lobby-join" class="hidden">
+        <h2>Соперник ждёт!</h2>
+        <p>Игрок выбрал <strong id="waiting-color-label">—</strong> и ждёт партнёра.</p>
+        <button type="button" id="btn-join" class="btn accent">Присоединиться</button>
+      </div>
+      <div id="status-line" class="status">Подключение…</div>
+    </section>
+
+    <section id="game" class="panel hidden">
+      <div class="game-meta">
+        <span id="game-role"></span>
+        <span id="game-turn"></span>
+      </div>
+      <div id="board" class="board" aria-label="Шахматная доска"></div>
+      <div id="promo-bar" class="hidden promo-bar">
+        <span>Превращение пешки:</span>
+        <button type="button" data-p="q">Ферзь</button>
+        <button type="button" data-p="r">Ладья</button>
+        <button type="button" data-p="b">Слон</button>
+        <button type="button" data-p="n">Конь</button>
+      </div>
+      <div class="btn-row">
+        <button type="button" id="btn-resign" class="btn danger">Сдаться</button>
+        <button type="button" id="btn-leave" class="btn">Выйти</button>
+      </div>
+      <p id="game-message" class="game-message"></p>
+    </section>
+  </main>
+
+  <footer>
+    <a href="/play.html">Техническая страница carrier</a>
+  </footer>
+  <script src="/game/chess/app.js"></script>
+</body>
+</html>
