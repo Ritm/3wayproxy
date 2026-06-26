@@ -14,11 +14,18 @@ type Config struct {
 	SessionID uint64        `yaml:"session_id"`
 	Session   SessionConfig `yaml:"session"`
 	Relays    []RelayConfig `yaml:"relays"`
+	Carrier   string        `yaml:"carrier"` // native (default) | browser
+	Browser   BrowserConfig `yaml:"browser"`
 	// Legacy single-relay (phase 1)
 	RelayWS   string `yaml:"relay_ws"`
 	ShardID   uint16 `yaml:"shard_id"`
 	Fragments int    `yaml:"fragments_per_packet"`
 	TUN       TUN    `yaml:"tun"`
+}
+
+type BrowserConfig struct {
+	Headless   bool   `yaml:"headless"`
+	ProfileDir string `yaml:"profile_dir"`
 }
 
 type SessionConfig struct {
@@ -82,7 +89,7 @@ func (c *Config) PoolConfig(sessionID uint64) (pool.Config, error) {
 	return pool.Config{
 		SessionID:      sessionID,
 		Endpoints:      eps,
-		Role:           pool.RolePlayer,
+		Dialer:         pool.NewNativeDialer(pool.RolePlayer),
 		RotateEvery:    time.Duration(c.Session.RotateIntervalSec) * time.Second,
 		ChurnEvery:     time.Duration(c.Session.ChurnIntervalSec) * time.Second,
 		Fragments:      c.Fragments,
@@ -117,4 +124,8 @@ func (c *Config) endpoints() []pool.Endpoint {
 
 func (c *Config) MultiRelay() bool {
 	return len(c.Relays) >= 3
+}
+
+func (c *Config) UseBrowser() bool {
+	return c.Carrier == "browser"
 }

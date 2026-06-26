@@ -8,9 +8,11 @@ import logging
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.protocol import (
     build_handshake_ack,
@@ -24,8 +26,12 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("relay")
 
 RELAY_SHARD_ID = int(os.environ.get("RELAY_SHARD_ID", "0"))
+GAME_ROOT = Path(__file__).resolve().parents[2] / "game"
 
 app = FastAPI(title="3wayproxy relay", docs_url=None, redoc_url=None)
+
+if GAME_ROOT.is_dir():
+    app.mount("/game", StaticFiles(directory=str(GAME_ROOT)), name="game")
 
 
 @dataclass
@@ -48,9 +54,16 @@ async def index() -> HTMLResponse:
     return HTMLResponse(
         "<!doctype html><html><head><title>Game</title></head>"
         "<body><h1>3wayproxy relay</h1>"
-        "<p>Placeholder — game cover arrives in a later phase.</p>"
+        "<p>Phase 3: carrier page at <a href=\"/play.html\">/play.html</a> "
+        "(snake game cover — later).</p>"
         "</body></html>"
     )
+
+
+@app.get("/play.html")
+async def play_page() -> FileResponse:
+    path = GAME_ROOT / "stub" / "play.html"
+    return FileResponse(path, media_type="text/html")
 
 
 @app.get("/health")

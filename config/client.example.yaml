@@ -14,10 +14,12 @@ relays:
     ws: wss://game-c.example/ws/play
     shard_id: 2
 
+# native = Go websocket (default); browser = headless Chromium (phase 3)
+carrier: native
+
 browser:
   profile_dir: ~/.3wayproxy/chrome
   headless: true
-  stealth: true
 
 tun:
   name: tun0

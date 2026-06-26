@@ -87,7 +87,7 @@ func (c *Config) PoolConfig() (pool.Config, error) {
 	return pool.Config{
 		SessionID:      c.SessionID,
 		Endpoints:      eps,
-		Role:           pool.RoleSpectator,
+		Dialer:         pool.NewNativeDialer(pool.RoleSpectator),
 		RotateEvery:    time.Duration(c.Session.RotateIntervalSec) * time.Second,
 		ChurnEvery:     time.Duration(c.Session.ChurnIntervalSec) * time.Second,
 		Fragments:      c.Fragments,

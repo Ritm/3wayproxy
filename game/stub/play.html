@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>3wayproxy — session</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 2rem; background: #1a1a2e; color: #eee; }
+    #status { padding: 1rem; border-radius: 8px; background: #16213e; }
+    .ok { color: #4ecca3; }
+    .err { color: #e94560; }
+  </style>
+</head>
+<body>
+  <h1>3wayproxy</h1>
+  <p id="status">Connecting…</p>
+  <script src="/game/carrier/ws_carrier.js"></script>
+  <script>
+    (async function () {
+      const el = document.getElementById('status');
+      const q = new URLSearchParams(location.search);
+      const wsUrl = q.get('ws');
+      const shard = parseInt(q.get('shard') || '0', 10);
+      const session = BigInt(q.get('session') || '0');
+      if (!wsUrl || session === 0n) {
+        el.textContent = 'Missing ?ws= and ?session= query params';
+        el.className = 'err';
+        return;
+      }
+      try {
+        await window.__carrier.connect(wsUrl, shard, session);
+        el.textContent = 'Carrier ready (shard ' + shard + ')';
+        el.className = 'ok';
+      } catch (e) {
+        el.textContent = 'Carrier error: ' + e.message;
+        el.className = 'err';
+      }
+    })();
+  </script>
+</body>
+</html>

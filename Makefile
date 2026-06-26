@@ -20,6 +20,7 @@ dist-arm64:
 
 test:
 	cd shared && go test ./...
+	cd client && go test ./browser/...
 
 relay:
 	cd relay && uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload

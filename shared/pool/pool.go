@@ -11,7 +11,6 @@ import (
 	"github.com/3wayproxy/shared/fragment"
 	"github.com/3wayproxy/shared/proto"
 	"github.com/3wayproxy/shared/rotate"
-	"github.com/3wayproxy/shared/wsclient"
 )
 
 type Role int
@@ -30,7 +29,7 @@ type Endpoint struct {
 type Config struct {
 	SessionID      uint64
 	Endpoints      []Endpoint
-	Role           Role
+	Dialer         Dialer
 	RotateEvery    time.Duration
 	ChurnEvery     time.Duration
 	Fragments      int
@@ -40,7 +39,7 @@ type Config struct {
 type Pool struct {
 	cfg    Config
 	sched  rotate.Schedule
-	conns  []*wsclient.Conn
+	conns  []RelayConn
 	mu     sync.Mutex
 	sendMu sync.Mutex
 	recvCh chan []byte
@@ -63,10 +62,13 @@ func New(cfg Config) (*Pool, error) {
 	if cfg.ChurnEvery <= 0 {
 		cfg.ChurnEvery = 3 * time.Second
 	}
+	if cfg.Dialer == nil {
+		cfg.Dialer = NewNativeDialer(RolePlayer)
+	}
 	return &Pool{
 		cfg:    cfg,
 		sched:  rotate.Schedule{N: len(cfg.Endpoints), Interval: cfg.RotateEvery},
-		conns:  make([]*wsclient.Conn, len(cfg.Endpoints)),
+		conns:  make([]RelayConn, len(cfg.Endpoints)),
 		recvCh: make(chan []byte, 256),
 	}, nil
 }
@@ -168,19 +170,13 @@ func (p *Pool) connect(ctx context.Context, idx int, resume bool) error {
 	p.mu.Unlock()
 
 	var (
-		c   *wsclient.Conn
+		c   RelayConn
 		err error
 	)
-	switch p.cfg.Role {
-	case RolePlayer:
-		c, err = wsclient.DialPlayer(ctx, ep.URL, ep.ShardID, p.cfg.SessionID)
-		if err == nil && resume {
-			_ = c.Resume(p.cfg.SessionID, 0, 0)
-		}
-	case RoleSpectator:
-		c, err = wsclient.DialSpectator(ctx, ep.URL, ep.RelayID, p.cfg.SessionID)
-	default:
-		return fmt.Errorf("pool: unknown role")
+	if nd, ok := p.cfg.Dialer.(*NativeDialer); ok && nd.Role == RoleSpectator {
+		c, err = p.cfg.Dialer.DialSpectator(ctx, idx, ep, p.cfg.SessionID, resume)
+	} else {
+		c, err = p.cfg.Dialer.DialPlayer(ctx, idx, ep, p.cfg.SessionID, resume)
 	}
 	if err != nil {
 		return err

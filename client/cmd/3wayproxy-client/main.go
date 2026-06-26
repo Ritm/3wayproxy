@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"github.com/3wayproxy/client/internal/config"
+	"github.com/3wayproxy/client/browser"
 	"github.com/3wayproxy/shared/fragment"
 	"github.com/3wayproxy/shared/pool"
 	"github.com/3wayproxy/shared/proto"
@@ -58,6 +59,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("pool config: %v", err)
 	}
+
+	if cfg.UseBrowser() {
+		bmgr, err := browser.NewManager(ctx, browser.Config{
+			Headless:   cfg.Browser.Headless,
+			ProfileDir: cfg.Browser.ProfileDir,
+		})
+		if err != nil {
+			log.Fatalf("chromium: %v", err)
+		}
+		defer bmgr.Close()
+		poolCfg.Dialer = browser.NewDialer(bmgr)
+		log.Printf("carrier: chromium (headless=%v)", cfg.Browser.Headless)
+	} else {
+		log.Printf("carrier: native go websocket")
+	}
+
 	relayPool, err := pool.New(poolCfg)
 	if err != nil {
 		log.Fatalf("pool: %v", err)
