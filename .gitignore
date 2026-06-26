@@ -1,5 +1,6 @@
 # Build
 bin/
+.tools/
 dist/
 *.exe
 *.test
@@ -12,6 +13,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+relay/.venv/
 .env
 
 # Browser / client
@@ -32,3 +34,6 @@ config/*.yaml
 # OS
 .DS_Store
 Thumbs.db
+
+# Accidental archives
+*.tar.gz

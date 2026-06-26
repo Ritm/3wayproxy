@@ -1,45 +1,89 @@
 # 3wayproxy
 
-R&D-проект мультипath-туннеля с маскировкой под браузерную игру (змейка / тетрис).
+R&D мультипath-туннель: **Go client + aggregator (Linux)**, **Python relay**, binary WebSocket carrier.
 
-Трафик разбивается на фрагменты и передаётся через 2 из 3 relay-сайтов на shared-хостинге по WebSocket (binary). Соединения периодически рвутся и восстанавливаются — для DPI это похоже на переподключения игрока. Для клиента и aggregator сессия остаётся непрерывной.
+## Структура
 
-## Компоненты
+```
+3wayproxy/
+├── client/          # Go: TUN → relay WSS (/ws/play)
+├── aggregator/      # Go: relay WSS (/ws/spectator) → TUN + NAT
+├── relay/           # Python FastAPI: буфер между player и spectator
+├── shared/          # Go: proto, fragment, reasm, tun (linux)
+├── config/          # YAML конфиги
+├── scripts/         # запуск на Ubuntu
+└── bin/             # собранные бинарники (после make)
+```
 
-| Компонент | Роль |
-|-----------|------|
-| `client/` | TUN-интерфейс, headless Chromium, шардирование, ротация relay |
-| `relay/` | Python: игра + WSS-сервер, буфер фрагментов |
-| `aggregator/` | Exit: reassembly, TUN/NAT, CDN-библиотеки, WSS к relay |
-| `game/` | Фронтенд игры (canvas, cover traffic) |
-| `shared/` | Формат кадров, криптография, константы протокола |
+## Требования (Ubuntu 24)
 
-## Документация
+- `golang-go`, `python3`, `python3-venv`
+- `ip` (iproute2), `iptables` — для TUN и NAT
+- **root/sudo** для client и aggregator (TUN + NAT)
 
-- [План разработки](docs/PLAN.md) — фазы, сроки, критерии готовности
-- [Архитектура](docs/ARCHITECTURE.md) — потоки данных, ротация, WSS churn
-- [Протокол](docs/PROTOCOL.md) — бинарный формат кадров и сессий
-
-## Быстрый старт (после MVP-0)
+## Быстрый старт
 
 ```bash
-# Локальная разработка — три relay + aggregator в docker-compose
-docker compose -f deploy/docker-compose.dev.yml up
+./scripts/setup-dev.sh
 
-# Клиент (Linux, root для TUN)
-sudo ./client/bin/3wayproxy-client --config config/client.dev.yaml
+# Терминал 1 — relay
+./scripts/run-relay.sh
+
+# Терминал 2 — aggregator (sudo)
+./scripts/run-aggregator.sh
+
+# Терминал 3 — client
+# ВАЖНО: aggregator и client на ОДНОЙ машине → client только через netns:
+./scripts/run-client-netns.sh
+
+# Терминал 4 — проверка (ping внутри netns клиента)
+sudo ip netns exec 3wayclient ping -c 3 8.8.8.8
 ```
+
+**Почему netns:** на одном хосте оба TUN (`tun3agg` + `tun3way`) имеют адрес `10.0.0.2`.
+Ответы от 8.8.8.8 ядро отдаёт в `tun3way` (client), а не в `tun3agg` (aggregator) — ping не работает.
+
+Если client на **другой** машине: `./scripts/run-client.sh` и обычный `ping`.
+
+`session_id` в `config/client.dev.yaml` и `config/aggregator.dev.yaml` должен совпадать.
+
+Маршруты в client по умолчанию: только `8.8.8.8` и `1.1.1.1` через TUN (не весь интернет).
+
+## Сборка вручную
+
+```bash
+make build    # bin/3wayproxy-client, bin/3wayproxy-agg
+make test     # unit-тесты shared/
+make relay    # uvicorn на :8000
+```
+
+## Docker (только relay)
+
+```bash
+make relay-docker
+# ws://127.0.0.1:8000/ws/play
+```
+
+## Деплой на удалённый сервер
+
+См. [docs/DEPLOY.md](docs/DEPLOY.md). Кратко: ошибка `Syntax error: ")"` = файл не ELF или запуск через `sh ./bin/...`.
+
+```bash
+./scripts/build-release.sh amd64
+./scripts/check-binary.sh dist/3wayproxy-agg
+```
+
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [PLAN.md](docs/PLAN.md)
+- [PROTOCOL.md](docs/PROTOCOL.md)
 
 ## Статус
 
-| Фаза | Описание | Статус |
-|------|----------|--------|
-| 0 | Протокол + reassembly в памяти | planned |
-| 1 | Один relay + aggregator, WSS | planned |
-| 2 | Три relay + ротация 2+1 | planned |
-| 3 | Headless Chromium + cover game | planned |
-| 4 | Хостинг + маскировка CDN | planned |
-
-## Лицензия
-
-Только для личного R&D. Не для массового распространения.
+| Компонент | Статус |
+|-----------|--------|
+| shared/proto + reasm | готово |
+| relay WSS | фаза 1 |
+| Go client TUN | фаза 1 |
+| Go aggregator TUN+NAT | фаза 1 |
+| 3 relay + ротация 2+1 | готово — [PHASE2.md](docs/PHASE2.md) |
+| Chromium + игра | фаза 3 |

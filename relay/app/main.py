@@ -1,71 +1,152 @@
-"""3wayproxy relay — game facade + WebSocket carrier (phase 1 stub)."""
+"""3wayproxy relay — WebSocket carrier between player and aggregator."""
 
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict, deque
-from typing import Deque
+import contextlib
+import logging
+import os
+from collections import defaultdict
+from dataclasses import dataclass, field
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
-app = FastAPI(title="Snake Game Relay", docs_url=None, redoc_url=None)
+from app.protocol import (
+    build_handshake_ack,
+    is_fragment,
+    parse_handshake,
+    parse_handshake_agg,
+    parse_resume,
+)
 
-# session_id -> queue of raw binary frames (uplink from player, for spectator)
-_uplink: dict[int, Deque[bytes]] = defaultdict(lambda: deque(maxlen=4096))
-# session_id -> queue of downlink frames (from spectator to player)
-_downlink: dict[int, Deque[bytes]] = defaultdict(lambda: deque(maxlen=4096))
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger("relay")
+
+RELAY_SHARD_ID = int(os.environ.get("RELAY_SHARD_ID", "0"))
+
+app = FastAPI(title="3wayproxy relay", docs_url=None, redoc_url=None)
+
+
+@dataclass
+class SessionHub:
+    uplink: asyncio.Queue[bytes] = field(default_factory=asyncio.Queue)
+    downlink: asyncio.Queue[bytes] = field(default_factory=asyncio.Queue)
+    players: int = 0
+    spectators: int = 0
+
+
+_sessions: dict[int, SessionHub] = defaultdict(SessionHub)
+
+
+def _hub(session_id: int) -> SessionHub:
+    return _sessions[session_id]
 
 
 @app.get("/")
 async def index() -> HTMLResponse:
     return HTMLResponse(
-        "<!doctype html><title>Snake</title>"
-        "<canvas id=c width=400 height=400></canvas>"
-        "<script>/* game + ws carrier — phase 3 */</script>"
+        "<!doctype html><html><head><title>Game</title></head>"
+        "<body><h1>3wayproxy relay</h1>"
+        "<p>Placeholder — game cover arrives in a later phase.</p>"
+        "</body></html>"
     )
+
+
+@app.get("/health")
+async def health() -> PlainTextResponse:
+    return PlainTextResponse("ok")
+
+
+async def _pump_downlink(ws: WebSocket, hub: SessionHub) -> None:
+    """Player: send aggregator → client frames without waiting on player input."""
+    while True:
+        frame = await hub.downlink.get()
+        await ws.send_bytes(frame)
+
+
+async def _pump_uplink(ws: WebSocket, hub: SessionHub) -> None:
+    """Spectator: forward player → aggregator frames immediately."""
+    while True:
+        frame = await hub.uplink.get()
+        await ws.send_bytes(frame)
 
 
 @app.websocket("/ws/play")
 async def ws_play(ws: WebSocket) -> None:
     await ws.accept(subprotocol="snake-game-v1")
     session_id: int | None = None
+    hub: SessionHub | None = None
+    pump: asyncio.Task[None] | None = None
     try:
         while True:
             data = await ws.receive_bytes()
-            if len(data) >= 9 and data[0] == 0x01:  # HANDSHAKE
-                session_id = int.from_bytes(data[2:10], "big")
-                ack = bytes([0x02, 1]) + session_id.to_bytes(8, "big") + (1200).to_bytes(2, "big") + bytes([data[2]])
-                await ws.send_bytes(ack)
+            sid_resume = parse_resume(data)
+            if sid_resume is not None:
+                session_id = sid_resume
+                hub = _hub(session_id)
+                if pump is None:
+                    pump = asyncio.create_task(_pump_downlink(ws, hub))
+                log.info("player resume session=%d", session_id)
+                await ws.send_bytes(build_handshake_ack(session_id, RELAY_SHARD_ID))
                 continue
-            if session_id is not None:
-                _uplink[session_id].append(data)
-                # deliver downlink if any
-                q = _downlink[session_id]
-                while q:
-                    await ws.send_bytes(q.popleft())
+            hs = parse_handshake(data)
+            if hs is not None:
+                shard_id, sid, _ = hs
+                session_id = sid
+                hub = _hub(session_id)
+                hub.players += 1
+                if pump is None:
+                    pump = asyncio.create_task(_pump_downlink(ws, hub))
+                log.info("player handshake session=%d shard=%d relay=%d", session_id, shard_id, RELAY_SHARD_ID)
+                await ws.send_bytes(build_handshake_ack(session_id, RELAY_SHARD_ID))
+                continue
+            if session_id is None or hub is None:
+                continue
+            if is_fragment(data):
+                await hub.uplink.put(data)
+                log.debug("uplink fragment session=%d len=%d", session_id, len(data))
     except WebSocketDisconnect:
         pass
+    finally:
+        if pump is not None:
+            pump.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pump
+        if hub is not None:
+            hub.players = max(0, hub.players - 1)
 
 
 @app.websocket("/ws/spectator")
 async def ws_spectator(ws: WebSocket) -> None:
     await ws.accept(subprotocol="snake-game-v1")
     session_id: int | None = None
+    hub: SessionHub | None = None
+    pump: asyncio.Task[None] | None = None
     try:
         while True:
-            if session_id is not None:
-                q = _uplink[session_id]
-                while q:
-                    await ws.send_bytes(q.popleft())
-            try:
-                data = await asyncio.wait_for(ws.receive_bytes(), timeout=0.05)
-            except asyncio.TimeoutError:
+            data = await ws.receive_bytes()
+            agg = parse_handshake_agg(data)
+            if agg is not None:
+                relay_id, sid = agg
+                session_id = sid
+                hub = _hub(session_id)
+                hub.spectators += 1
+                if pump is None:
+                    pump = asyncio.create_task(_pump_uplink(ws, hub))
+                log.info("spectator handshake session=%d relay=%d", session_id, relay_id)
                 continue
-            if len(data) >= 9 and data[0] == 0xA1:
-                session_id = int.from_bytes(data[2:10], "big")
+            if session_id is None or hub is None:
                 continue
-            if session_id is not None:
-                _downlink[session_id].append(data)
+            if is_fragment(data):
+                await hub.downlink.put(data)
+                log.debug("downlink fragment session=%d len=%d", session_id, len(data))
     except WebSocketDisconnect:
         pass
+    finally:
+        if pump is not None:
+            pump.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await pump
+        if hub is not None:
+            hub.spectators = max(0, hub.spectators - 1)

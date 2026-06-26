@@ -8,6 +8,47 @@
 4. **Logical continuity**: клиент и aggregator держат одну сессию поверх churn.
 5. **Без исходящих curl с relay**: aggregator инициирует связь к relay (inbound WSS на хостинг).
 
+## Платформы и ingress клиента
+
+**Детекция VPN — проблема только на Android.** На Linux, macOS и Windows использование TUN не рассматривается как отдельный риск; там ingress по умолчанию — **TUN + policy routing** (опционально SOCKS5 `127.0.0.1` для отладки).
+
+
+| Платформа   | Ingress по умолчанию      | Детекция VPN      |
+| ----------- | ------------------------- | ----------------- |
+| **Linux**   | TUN                       | не в фокусе       |
+| **macOS**   | TUN (utun)                | не в фокусе       |
+| **Windows** | TUN (wintun)              | не в фокусе       |
+| **Android** | отдельная ветка, см. ниже | **основной риск** |
+
+
+### Desktop (Linux / macOS / Windows)
+
+```
+[Любой трафик] → TUN → policy (опц.) → fragmenter → Chromium → WSS
+```
+
+- Per-app / per-domain policy в userspace (UID, SNI, DNS) — **опционально**, для удобства, не из-за детекта.
+- SOCKS5 на `127.0.0.1` — только dev или точечный перехват proxy-aware приложений.
+
+### Android (отдельная фаза R&D)
+
+`VpnService` + TUN палится: иконка VPN, списки VPN-приложений, проверки в банках и играх. Поэтому **основной клиент проекта не ориентируется на Android TUN**.
+
+Варианты для Android (по возрастанию охвата и риска детекта):
+
+1. **Browser-only** — встроенный WebView/Chromium, carrier только внутри «игры»; системный VPN не нужен.
+2. **Per-app VPN** — `addAllowedApplication()` только для браузера/Telegram; остальные apps мимо; иконка VPN остаётся.
+3. **Per-app + per-domain** — внутри allowed apps правило «t.me / Telegram DC → игра», остальное bypass; сложнее (SNI, IP-пулы, DoH, UDP).
+
+Policy на Android (когда понадобится):
+
+```
+addAllowedApplication(chrome, telegram)   // остальные apps → провайдер напрямую
+on_new_flow(uid, dst) → TUNNEL_GAME | BYPASS   // внутри allowed apps
+```
+
+Relay, aggregator и протокол фрагментов **одинаковы** на всех платформах; меняется только то, как IP-пакеты попадают в fragmenter.
+
 ## Топология
 
 ```
@@ -30,10 +71,12 @@
               └──────────────────────────┼──────────────────────────┘
                                          │
                               ┌──────────▼──────────┐
-                              │  Client             │
+                              │  Client (desktop)   │
                               │  TUN + Chromium     │
                               │  2 active shards    │
                               └─────────────────────┘
+
+Клиент на Android — тот же carrier (Chromium → WSS), другой ingress (browser-only / per-app VPN).
 ```
 
 ## Почему WSS, а не curl с relay
@@ -50,11 +93,13 @@ Shared-хостинг часто блокирует исходящие `curl`/`f
 
 ## Почему не WebRTC (на первом этапе)
 
-| Критерий | WSS | WebRTC |
-|----------|-----|--------|
+
+| Критерий         | WSS                                     | WebRTC                                 |
+| ---------------- | --------------------------------------- | -------------------------------------- |
 | На shared Python | реалистично (если есть ASGI/long-lived) | нужен TURN, UDP, ICE — редко на shared |
-| Маскировка | обычный game sync | отдельный UDP-поток, палится иначе |
-| R&D сложность | низкая | высокая |
+| Маскировка       | обычный game sync                       | отдельный UDP-поток, палится иначе     |
+| R&D сложность    | низкая                                  | высокая                                |
+
 
 WebRTC — **фаза 5+** (опционально) для datachannel между клиентом и aggregator **мимо** relay, если появится свой VPS. Для текущей модели «3 игры на хостинге» — **Binary WSS**.
 
@@ -106,13 +151,15 @@ Relay/Aggregator восстанавливают окно reassembly из RAM (TT
 
 ### Роли
 
-| Задача | Кто выполняет |
-|--------|----------------|
-| TLS fingerprint Chrome | Chromium (не curl) |
-| Cookie / localStorage session | Chromium |
-| Binary WSS send/recv | JS внутри страницы игры → CDP bridge → native TUN |
-| Cover: движения змейки | JS autoplay + случайные паузы |
-| Загрузка «библиотек» с CDN | `<script src="https://exit.example/static/jquery.min.js">` |
+
+| Задача                        | Кто выполняет                                              |
+| ----------------------------- | ---------------------------------------------------------- |
+| TLS fingerprint Chrome        | Chromium (не curl)                                         |
+| Cookie / localStorage session | Chromium                                                   |
+| Binary WSS send/recv          | JS внутри страницы игры → CDP bridge → native TUN          |
+| Cover: движения змейки        | JS autoplay + случайные паузы                              |
+| Загрузка «библиотек» с CDN    | `<script src="https://exit.example/static/jquery.min.js">` |
+
 
 ### Схема client
 
@@ -182,22 +229,27 @@ Aggregator по IP relay узнаёт «это хостинг A» и откры�
 
 ## Угрозы и митигации
 
-| Угроза | Митигация |
-|--------|-----------|
-| Active probing | Реальная игра, spectator mode без токена |
-| Корреляция 3 flows | Ротация 2+1, jitter, разные inter-arrival |
-| Fingerprint headless | playwright-stealth, не HeadlessChrome UA |
-| Утечка destination | Только на aggregator |
-| Потеря фрагмента при churn | seq + ACK + retransmit window 32 |
-| Блокировка aggregator CDN | Несколько mirror domain |
+
+| Угроза                     | Митигация                                 |
+| -------------------------- | ----------------------------------------- |
+| Active probing             | Реальная игра, spectator mode без токена  |
+| Корреляция 3 flows         | Ротация 2+1, jitter, разные inter-arrival |
+| Fingerprint headless       | playwright-stealth, не HeadlessChrome UA  |
+| Утечка destination         | Только на aggregator                      |
+| Потеря фрагмента при churn | seq + ACK + retransmit window 32          |
+| Блокировка aggregator CDN  | Несколько mirror domain                   |
+
 
 ## Стек (предложение)
 
-| Часть | Технология |
-|-------|------------|
-| Client core | Go 1.22 (TUN, CDP) |
-| Browser automation | Playwright |
-| Relay | Python 3.11, FastAPI, uvicorn |
-| Aggregator | Go (TUN, NAT, WSS client pool) |
-| Game | Vanilla JS + Canvas |
-| Dev env | docker-compose |
+
+| Часть              | Технология                     |
+| ------------------ | ------------------------------ |
+| Client core        | Go 1.22 (TUN, CDP)             |
+| Browser automation | Playwright                     |
+| Relay              | Python 3.11, FastAPI, uvicorn  |
+| Aggregator         | Go (TUN, NAT, WSS client pool) |
+| Game               | Vanilla JS + Canvas            |
+| Dev env            | docker-compose                 |
+
+

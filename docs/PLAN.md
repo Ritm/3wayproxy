@@ -10,10 +10,10 @@
 
 **Задачи**
 
-- [ ] `shared/proto/` — кодирование/декодирование кадров (Go)
-- [ ] `aggregator/reassembly/` — unit-тесты: 2 фрагмента → 1 IP packet
-- [ ] `client/fragment/` — нарезка TUN read на 2 FRAGMENT кадра
-- [ ] Mock-тест: client mock → aggregator mock по TCP (вместо WSS)
+- `shared/proto/` — кодирование/декодирование кадров (Go)
+- `aggregator/reassembly/` — unit-тесты: 2 фрагмента → 1 IP packet
+- `client/fragment/` — нарезка TUN read на 2 FRAGMENT кадра
+- Mock-тест: client mock → aggregator mock по TCP (вместо WSS)
 
 **Критерий готовности**
 
@@ -32,14 +32,14 @@ go test ./...
 
 **Задачи**
 
-- [ ] `relay/` — FastAPI app:
+- `relay/` — FastAPI app:
   - `GET /` — заглушка игры
   - `WS /ws/play` — binary frames
   - `WS /ws/spectator` — aggregator
   - in-memory buffer `session_id → queue[fragments]`
-- [ ] `aggregator/` — WSS client к `/ws/spectator`, TUN interface
-- [ ] `client/` — простой WSS client (временно **без** Chromium) к `/ws/play`
-- [ ] `deploy/docker-compose.dev.yml` — relay + aggregator
+- `aggregator/` — WSS client к `/ws/spectator`, TUN interface
+- `client/` — простой WSS client (временно **без** Chromium) к `/ws/play`
+- `deploy/docker-compose.dev.yml` — relay + aggregator
 
 **Критерий готовности**
 
@@ -52,17 +52,16 @@ go test ./...
 
 ---
 
-## Фаза 2 — Три relay + ротация 2+1
+## Фаза 2 — Три relay + ротация 2+1 ✅
 
-**Цель**: шардирование и смена active/idle relay.
+**Цель**: шардирование и смена active/idle relay. См. [PHASE2.md](PHASE2.md).
 
 **Задачи**
 
-- [ ] `client/rotate/` — scheduler: 2 active, 1 idle, `rotate_interval` random 3–8s
-- [ ] `client/shard/` — `frag_idx` → только active relays
-- [ ] `aggregator/shard/` — подписка на 3 spectator WSS, выбор 2 active по тому же алгоритму
-- [ ] WSS churn: disconnect каждые 2–5 s, RESUME с `last_seq`
-- [ ] Retransmit: ACK `need_retx`
+- [x] `shared/rotate/` + `shared/pool/` — 2 active, 1 idle
+- [x] client + aggregator: 3 WSS, шардирование фрагментов
+- [x] WSS churn + RESUME
+- [ ] Retransmit: ACK `need_retx` (отложено)
 
 **Критерий готовности**
 
@@ -80,14 +79,14 @@ go test ./...
 
 **Задачи**
 
-- [ ] `game/` — змейка на canvas (минимум: движение, score, game over)
-- [ ] `game/carrier/ws_carrier.js` — bridge: `sendFragment(ArrayBuffer)`, `onFragment(cb)`
-- [ ] `client/browser/` — Playwright:
+- `game/` — змейка на canvas (минимум: движение, score, game over)
+- `game/carrier/ws_carrier.js` — bridge: `sendFragment(ArrayBuffer)`, `onFragment(cb)`
+- `client/browser/` — Playwright:
   - 3 browser context (или tabs) на 3 relay URL
   - `exposeBinding('tunWrite', ...)` для downlink
   - autoplay snake между fragment sends (random 200–1000 ms)
-- [ ] Убрать прямой WSS из native client (только CDP)
-- [ ] playwright-stealth / аргументы против headless-detect
+- Убрать прямой WSS из native client (только CDP)
+- playwright-stealth / аргументы против headless-detect
 
 **Критерий готовности**
 
@@ -105,13 +104,13 @@ go test ./...
 
 **Задачи**
 
-- [ ] Выбор 3 хостингов с Python и **долгоживущим** процессом (проверка WSS)
-- [ ] `relay/deploy/` — systemd/supervisor, nginx reverse proxy → uvicorn
-- [ ] HTTPS на каждом relay
-- [ ] `aggregator/cdn/` — jquery + game-stats.js с IP-aware config
-- [ ] Встраивание `<script src="cdn.../game-stats.js">` в страницу игры
-- [ ] Aggregator token для `/ws/spectator` — env secret per relay
-- [ ] Документ `docs/HOSTING_CHECKLIST.md` по результатам проверки
+- Выбор 3 хостингов с Python и **долгоживущим** процессом (проверка WSS)
+- `relay/deploy/` — systemd/supervisor, nginx reverse proxy → uvicorn
+- HTTPS на каждом relay
+- `aggregator/cdn/` — jquery + game-stats.js с IP-aware config
+- Встраивание `<script src="cdn.../game-stats.js">` в страницу игры
+- Aggregator token для `/ws/spectator` — env secret per relay
+- Документ `docs/HOSTING_CHECKLIST.md` по результатам проверки
 
 **Критерий готовности**
 
@@ -125,13 +124,34 @@ go test ./...
 
 ---
 
+## Фаза 6 — Android (отдельно, после desktop MVP)
+
+**Контекст**: детекция VPN актуальна **только на Android**. Linux/macOS/Windows ведутся с TUN без этой оговорки.
+
+**Цель**: carrier через «игру» без обязательного системного TUN.
+
+**Задачи**
+
+- `client/android/` — browser-only: WebView + та же `game/carrier`
+- Опционально: `VpnService` + `addAllowedApplication()` + policy (app + domain)
+- Документ `docs/ANDROID.md` — tradeoffs, детект, per-app routing
+
+**Критерий готовности**
+
+- Браузер на Android открывает t.me через туннель; иконка VPN **не требуется** (browser-only режим)
+- Или: per-app VPN только для выбранных packages
+
+**Срок**: после фазы 4, по необходимости
+
+---
+
 ## Фаза 5 — Hardening (опционально)
 
-- [ ] Padding buckets (256/512/768)
-- [ ] Decoy POST `/api/score` без fragment
-- [ ] Шифрование payload fragment (AES-GCM, ключ из HANDSHAKE)
-- [ ] WebRTC datachannel client↔aggregator как второй путь
-- [ ] Метрики: loss, reassembly latency, churn count
+- Padding buckets (256/512/768)
+- Decoy POST `/api/score` без fragment
+- Шифрование payload fragment (AES-GCM, ключ из HANDSHAKE)
+- WebRTC datachannel client↔aggregator как второй путь
+- Метрики: loss, reassembly latency, churn count
 
 **Срок**: по мере необходимости
 
@@ -247,19 +267,23 @@ tun:
 
 ## Открытые вопросы (решить в процессе)
 
-| # | Вопрос | Когда |
-|---|--------|-------|
-| 1 | Go vs Rust для client | фаза 0 (предлагается Go: TUN + Playwright) |
-| 2 | Поддерживает ли выбранный хостинг uvicorn WSS | фаза 4 |
-| 3 | Один Chromium profile / три tab vs три context | фаза 3 |
-| 4 | Нужен ли SQLite buffer на relay при churn | фаза 2 |
+
+| #   | Вопрос                                         | Когда                                      |
+| --- | ---------------------------------------------- | ------------------------------------------ |
+| 1   | Go vs Rust для client                          | фаза 0 (предлагается Go: TUN + Playwright) |
+| 2   | Поддерживает ли выбранный хостинг uvicorn WSS  | фаза 4                                     |
+| 3   | Один Chromium profile / три tab vs три context | фаза 3                                     |
+| 4   | Нужен ли SQLite buffer на relay при churn      | фаза 2                                     |
+| 5   | Android: browser-only vs per-app VPN           | фаза 6                                     |
+
 
 ---
 
 ## Метрики успеха проекта
 
-- [ ] Active probing: игра запускается, нет явного «proxy API»
-- [ ] Ни один relay не логирует destination IP
-- [ ] WSS сессии < 5 s в среднем (churn)
-- [ ] Ротация 2+1 без потери > 1% пакетов на личном трафике
-- [ ] Client TLS выглядит как Chrome (JA3 сравнение вручную)
+- Active probing: игра запускается, нет явного «proxy API»
+- Ни один relay не логирует destination IP
+- WSS сессии < 5 s в среднем (churn)
+- Ротация 2+1 без потери > 1% пакетов на личном трафике
+- Client TLS выглядит как Chrome (JA3 сравнение вручную)
+
