@@ -1,6 +1,6 @@
 # 3wayproxy
 
-R&D мультипath-туннель: **Go client + aggregator (Linux)**, **Python relay**, binary WebSocket carrier.
+R&D multipath-туннель: **Go client + aggregator (Linux)**, **Python relay**, binary WebSocket carrier.
 
 ## Структура
 
@@ -39,12 +39,6 @@ R&D мультипath-туннель: **Go client + aggregator (Linux)**, **Pyth
 # Терминал 4 — проверка (ping внутри netns клиента)
 sudo ip netns exec 3wayclient ping -c 3 8.8.8.8
 ```
-
-**Почему netns:** на одном хосте оба TUN (`tun3agg` + `tun3way`) имеют адрес `10.0.0.2`.
-Ответы от 8.8.8.8 ядро отдаёт в `tun3way` (client), а не в `tun3agg` (aggregator) — ping не работает.
-
-Если client на **другой** машине: `./scripts/run-client.sh` и обычный `ping`.
-
 `session_id` в `config/client.dev.yaml` и `config/aggregator.dev.yaml` должен совпадать.
 
 Маршруты в client по умолчанию: только `8.8.8.8` и `1.1.1.1` через TUN (не весь интернет).
@@ -66,7 +60,7 @@ make relay-docker
 
 ## Деплой на удалённый сервер
 
-См. [docs/DEPLOY.md](docs/DEPLOY.md). Кратко: ошибка `Syntax error: ")"` = файл не ELF или запуск через `sh ./bin/...`.
+См. [docs/DEPLOY.md](docs/DEPLOY.md).
 
 ```bash
 ./scripts/build-release.sh amd64
