@@ -1,0 +1,10 @@
+# Замените LOGIN на логин аккаунта Sprinthost
+SetEnv GHOST_NODE_VERSION_CHECK false
+PassengerStartupFile app.js
+PassengerResolveSymlinksInDocumentRoot on
+Require all granted
+PassengerAppType node
+PassengerAppRoot /home/LOGIN/domains/mrritm.xsph.ru/public_html
+Options -MultiViews
+PassengerStickySessions on
+SetEnv GAME_ROOT /home/LOGIN/domains/mrritm.xsph.ru/public_html/game
