@@ -28,6 +28,12 @@ relay:
 relay-docker:
 	docker compose -f deploy/docker-compose.dev.yml up --build
 
+relay-node-install:
+	cd relay-node && npm install --omit=dev
+
+relay-node:
+	./scripts/run-relay-node.sh
+
 clean:
 	rm -rf bin/
 	find . -name '*.test' -delete

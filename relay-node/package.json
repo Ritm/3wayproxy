@@ -1,0 +1,19 @@
+{
+  "name": "3wayproxy-relay",
+  "version": "0.1.0",
+  "description": "3wayproxy relay — WebSocket carrier + chess cover (Node.js)",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "chess.js": "^1.0.0-beta.8",
+    "express": "^4.21.0",
+    "ws": "^8.18.0"
+  }
+}
