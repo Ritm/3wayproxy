@@ -41,4 +41,8 @@ relay-node/node_modules/
 # Accidental archives
 *.tar.gz
 *.pcap
+*.zip
 analize/
+deploy/amvera-upload/
+deploy/amvera-upload-tmp/
+deploy/amvera/app/__pycache__/

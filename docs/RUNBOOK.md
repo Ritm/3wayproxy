@@ -3,6 +3,7 @@
 Полная инструкция: сборка, запуск relay / aggregator / client, сбор pcap и анализ.
 
 **Ваш деплой:**
+
 - Сервер: `serv2.erofeevonline.ru` (`/data/3wayproxy`)
 - Relay: порты **81, 82, 83** (без nginx)
 - Client: ваш ПК (Linux)
@@ -34,6 +35,15 @@ make build
 ```
 
 Конфиги (не в git): `config/client.dev.3relay.yaml`, `config/aggregator.dev.3relay.yaml` — `session_id` **должен совпадать**.
+
+**Важно — разные пути WebSocket:**
+
+| Компонент   | Путь WS            |
+|-------------|--------------------|
+| **client**  | `/ws/play`         |
+| **aggregator** | `/ws/spectator` |
+
+Перепутать = client «зависнет» после `carrier: native` (ждёт handshake ack, которого spectator не шлёт).
 
 ---
 
@@ -110,16 +120,56 @@ browser:
   headless: true
 ```
 
+**Playwright:** client использует **системный Google Chrome** (`channel: chrome`), не качает Firefox/WebKit.
+
+**Важно:** `game/carrier/ws_carrier.js` выполняется **на relay (Amvera)**, не на ПК. После обновления файла — **перезалить на все 3 приложения Amvera** и пересобрать.
+
+- При `carrier: browser` **churn отключён** автоматически (reconnect Playwright ~1 с рвёт TCP).
+
+- Client ходит на **relay (Amvera)**, не на aggregator — bypass aggregator **не помогает**.
+- В `bypass_routes` — только **IP relay** (или авто из `relays[].ws`). Сайты из `tun.routes` (2ip.ru и т.д.) в bypass **не** добавлять.
+- Маршруты `tun.routes` применяются **после** подключения к relay.
+
 ```bash
-sudo ./bin/3wayproxy-client --config config/client.dev.3relay.yaml
+make build
+./scripts/run-client-browser.sh config/client.dev.3relay.yaml
+# или: sudo -E HOME=$HOME ./bin/3wayproxy-client --config config/client.dev.3relay.yaml
+```
+
+Если зависает >90 с — убейте старый процесс (`sudo pkill -f 3wayproxy-client`) и `sudo ip link del tun3way`.
+
+Ожидаемые логи (browser):
+
+```
+connecting to relays (before tun)…
+carrier: chromium (headless=true)
+browser: relay 0 opening https://relay-ritm.amvera.io/play.html?...
+browser: relay 0 new context…
+browser: relay 0 new page…
+browser: relay 0 expose binding…
+browser: relay 0 goto…
+browser: relay 0 page loaded, waiting for carrier…
+browser: relay 0 ready relay-ritm.amvera.io
+pool: connected relay 0 ...
+bypass: [...]
+tun routes applied: [...]
+tun tun3way up, ...
 ```
 
 **Проверка туннеля:**
 
 ```bash
-ping -c 3 8.8.8.8
-curl --dns-servers 8.8.8.8 https://ifconfig.me
+# после старта client — в логах должно быть:
+# route check 188.40.167.82 → dev tun3way
+
+ip route get 188.40.167.82
+# dev tun3way — правильно; dev enp4s0 — маршрут сломан, перезапустите client после make build
+
+curl --dns-servers 8.8.8.8 https://2ip.ru
+# IP aggregator (serv2), не домашний
 ```
+
+> Браузер без `--dns-servers` использует системный DNS. IP 2ip.ru в `routes` достаточно, если DNS возвращает тот же A-запись (188.40.167.82).
 
 > Client и aggregator на **одной** машине без netns — ping не работает. У вас client на ПК, aggregator на serv2 — netns не нужен.
 
@@ -179,6 +229,7 @@ sudo apt install tshark   # один раз
 ```
 
 Смотрите:
+
 - **Корреляция |r|** между ногами 81/82/83 (ниже — лучше для маскировки)
 - **Длительность TCP-потоков** (много >60s — похоже на VPN)
 - **JA3** (при `carrier: browser` — должен быть как Chrome)
@@ -216,14 +267,17 @@ Aggregator пересобирать только если менялся Go-ко
 
 ## 8. Active probing (шахматы)
 
-| URL | Назначение |
-|-----|------------|
-| `http://serv2:81/` | Шахматы — для цензора / бота |
-| `http://serv2:81/play.html` | Carrier (Chromium client) |
-| `ws://serv2:81/ws/play` | Туннель (binary) |
-| `ws://serv2:81/ws/chess` | Игра (JSON) |
+
+| URL                         | Назначение                   |
+| --------------------------- | ---------------------------- |
+| `http://serv2:81/`          | Шахматы — для цензора / бота |
+| `http://serv2:81/play.html` | Carrier (Chromium client)    |
+| `ws://serv2:81/ws/play`     | Туннель (binary)             |
+| `ws://serv2:81/ws/chess`    | Игра (JSON)                  |
+
 
 Сценарий для probing:
+
 1. Открыть `/` — видна игра
 2. «Играть белыми» → ожидание
 3. Второй браузер → «Присоединиться»
@@ -233,13 +287,15 @@ Aggregator пересобирать только если менялся Go-ко
 
 ## 9. Типичные проблемы
 
-| Симптом | Решение |
-|---------|---------|
-| `play.html` 404 | Обновить `relay/app/main.py` + `game/` |
+
+| Симптом                   | Решение                                       |
+| ------------------------- | --------------------------------------------- |
+| `play.html` 404           | Обновить `relay/app/main.py` + `game/`        |
 | Aggregator не коннектится | Порты 81–83, не 8001; relay слушает `0.0.0.0` |
-| ping не идёт | aggregator запущен? `session_id` совпадает? |
-| Chromium не стартует | `./scripts/install-chromium.sh` |
-| chess ImportError | `pip install chess` в relay venv |
+| ping не идёт              | aggregator запущен? `session_id` совпадает?   |
+| Chromium не стартует      | `./scripts/install-chromium.sh`               |
+| chess ImportError         | `pip install chess` в relay venv              |
+
 
 ---
 
@@ -253,3 +309,4 @@ Aggregator пересобирать только если менялся Go-ко
 5. тест ping/curl
 6. Ctrl+C tcpdump → pcap-analysis.sh
 ```
+

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 
 	"github.com/3wayproxy/shared/pool"
 )
+
+const dialTimeout = 90 * time.Second
 
 // Dialer opens WebSocket sessions via Chromium + ws_carrier.js.
 type Dialer struct {
@@ -23,7 +26,23 @@ func NewDialer(mgr *Manager) *Dialer {
 }
 
 func (d *Dialer) DialPlayer(ctx context.Context, idx int, ep pool.Endpoint, sessionID uint64, resume bool) (pool.RelayConn, error) {
-	return d.open(ctx, idx, ep, sessionID, resume)
+	dctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	defer cancel()
+	type res struct {
+		c   pool.RelayConn
+		err error
+	}
+	ch := make(chan res, 1)
+	go func() {
+		c, err := d.open(dctx, idx, ep, sessionID, resume)
+		ch <- res{c, err}
+	}()
+	select {
+	case <-dctx.Done():
+		return nil, fmt.Errorf("browser: relay %d timeout after %s (check: sudo -E, system chrome, VPN)", idx, dialTimeout)
+	case r := <-ch:
+		return r.c, r.err
+	}
 }
 
 func (d *Dialer) DialSpectator(ctx context.Context, idx int, ep pool.Endpoint, sessionID uint64, resume bool) (pool.RelayConn, error) {
@@ -39,6 +58,7 @@ func (d *Dialer) open(ctx context.Context, idx int, ep pool.Endpoint, sessionID 
 	if err != nil {
 		return nil, err
 	}
+	log.Printf("browser: relay %d opening %s", idx, playURL)
 
 	bctx, err := browser.NewContext(playwright.BrowserNewContextOptions{
 		IgnoreHttpsErrors: playwright.Bool(true),
@@ -53,27 +73,27 @@ func (d *Dialer) open(ctx context.Context, idx int, ep pool.Endpoint, sessionID 
 		return nil, fmt.Errorf("new page: %w", err)
 	}
 
-	recvCh := make(chan []byte, 256)
+	recvCh := make(chan []byte, 2048)
+	sendCh := make(chan []byte, 256)
 	closed := &atomic.Bool{}
+	var wg sync.WaitGroup
 
 	deliver := func(source *playwright.BindingSource, args ...interface{}) interface{} {
 		if closed.Load() || len(args) == 0 {
 			return nil
 		}
-		raw, ok := args[0].([]interface{})
+		b64, ok := args[0].(string)
 		if !ok {
 			return nil
 		}
-		b := make([]byte, len(raw))
-		for i, v := range raw {
-			if n, ok := v.(float64); ok {
-				b[i] = byte(n)
-			}
+		b, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			log.Printf("browser: relay %d tunDeliver decode: %v", idx, err)
+			return nil
 		}
 		select {
 		case recvCh <- b:
-		default:
-			log.Printf("browser: relay %d recv drop (full)", idx)
+		case <-ctx.Done():
 		}
 		return nil
 	}
@@ -85,8 +105,8 @@ func (d *Dialer) open(ctx context.Context, idx int, ep pool.Endpoint, sessionID 
 	}
 
 	if _, err := page.Goto(playURL, playwright.PageGotoOptions{
-		WaitUntil: playwright.WaitUntilStateDomcontentloaded,
-		Timeout:   playwright.Float(30000),
+		WaitUntil: playwright.WaitUntilStateCommit,
+		Timeout:   playwright.Float(45000),
 	}); err != nil {
 		_ = page.Close()
 		_ = bctx.Close()
@@ -94,7 +114,7 @@ func (d *Dialer) open(ctx context.Context, idx int, ep pool.Endpoint, sessionID 
 	}
 
 	if _, err := page.WaitForFunction("() => window.__carrier && window.__carrier.isReady()", nil, playwright.PageWaitForFunctionOptions{
-		Timeout: playwright.Float(30000),
+		Timeout: playwright.Float(45000),
 	}); err != nil {
 		_ = page.Close()
 		_ = bctx.Close()
@@ -109,13 +129,37 @@ func (d *Dialer) open(ctx context.Context, idx int, ep pool.Endpoint, sessionID 
 		}
 	}
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case frame, ok := <-sendCh:
+				if !ok || closed.Load() {
+					return
+				}
+				b64 := base64.StdEncoding.EncodeToString(frame)
+				if _, err := page.Evaluate(`b64 => window.__carrier.sendBase64(b64)`, b64); err != nil {
+					if !closed.Load() {
+						log.Printf("browser: relay %d send: %v", idx, err)
+					}
+					return
+				}
+			}
+		}
+	}()
+
 	log.Printf("browser: relay %d ready %s", idx, wsHost(ep.URL))
 	return &relayConn{
 		page:   page,
 		bctx:   bctx,
 		recvCh: recvCh,
+		sendCh: sendCh,
 		closed: closed,
 		ctx:    ctx,
+		wg:     &wg,
 	}, nil
 }
 
@@ -123,17 +167,23 @@ type relayConn struct {
 	page   playwright.Page
 	bctx   playwright.BrowserContext
 	recvCh chan []byte
+	sendCh chan []byte
 	closed *atomic.Bool
 	ctx    context.Context
+	wg     *sync.WaitGroup
 }
 
 func (c *relayConn) Send(frame []byte) error {
 	if c.closed.Load() {
 		return fmt.Errorf("browser: conn closed")
 	}
-	b64 := base64.StdEncoding.EncodeToString(frame)
-	_, err := c.page.Evaluate(`b64 => window.__carrier.sendBase64(b64)`, b64)
-	return err
+	dup := append([]byte(nil), frame...)
+	select {
+	case c.sendCh <- dup:
+		return nil
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	}
 }
 
 func (c *relayConn) Recv() ([]byte, error) {
@@ -155,6 +205,8 @@ func (c *relayConn) Close() error {
 	if c.closed.Swap(true) {
 		return nil
 	}
+	close(c.sendCh)
+	c.wg.Wait()
 	_ = c.page.Close()
 	return c.bctx.Close()
 }

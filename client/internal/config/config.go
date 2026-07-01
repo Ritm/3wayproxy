@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -78,7 +79,22 @@ func Load(path string) (*Config, error) {
 	if c.TUN.PeerIP == "" {
 		c.TUN.PeerIP = "10.0.0.1"
 	}
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
 	return &c, nil
+}
+
+func (c *Config) validate() error {
+	for i, r := range c.Relays {
+		if strings.Contains(r.WS, "/ws/spectator") {
+			return fmt.Errorf("relays[%d]: client must use /ws/play, not /ws/spectator (spectator is for aggregator only)", i)
+		}
+	}
+	if strings.Contains(c.RelayWS, "/ws/spectator") {
+		return fmt.Errorf("relay_ws: client must use /ws/play, not /ws/spectator")
+	}
+	return nil
 }
 
 func (c *Config) PoolConfig(sessionID uint64) (pool.Config, error) {
@@ -86,12 +102,17 @@ func (c *Config) PoolConfig(sessionID uint64) (pool.Config, error) {
 	if len(eps) == 0 {
 		return pool.Config{}, fmt.Errorf("no relays configured")
 	}
+	churnEvery := time.Duration(c.Session.ChurnIntervalSec) * time.Second
+	if c.UseBrowser() {
+		// Browser reconnect = new Playwright page (~1s); churn breaks TCP through tunnel.
+		churnEvery = 0
+	}
 	return pool.Config{
 		SessionID:      sessionID,
 		Endpoints:      eps,
 		Dialer:         pool.NewNativeDialer(pool.RolePlayer),
 		RotateEvery:    time.Duration(c.Session.RotateIntervalSec) * time.Second,
-		ChurnEvery:     time.Duration(c.Session.ChurnIntervalSec) * time.Second,
+		ChurnEvery:     churnEvery,
 		Fragments:      c.Fragments,
 		DisconnectIdle: c.Session.DisconnectIdle,
 	}, nil

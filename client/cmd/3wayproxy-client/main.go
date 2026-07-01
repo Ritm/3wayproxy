@@ -37,31 +37,14 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	iface, err := tun.Open(tun.Config{
-		Name:    cfg.TUN.Name,
-		LocalIP: cfg.TUN.LocalIP,
-		PeerIP:  cfg.TUN.PeerIP,
-		MTU:     cfg.TUN.MTU,
-	})
-	if err != nil {
-		log.Fatalf("tun: %v", err)
-	}
-	defer iface.Close()
-
-	if err := tun.AddRoutes(iface.Name(), cfg.TUN.Routes); err != nil {
-		log.Fatalf("routes: %v", err)
-	}
-	if err := tun.AddBypassRoutes(cfg.TUN.BypassRoutes); err != nil {
-		log.Fatalf("bypass routes: %v", err)
-	}
-
 	poolCfg, err := cfg.PoolConfig(sessionID)
 	if err != nil {
 		log.Fatalf("pool config: %v", err)
 	}
 
+	var bmgr *browser.Manager
 	if cfg.UseBrowser() {
-		bmgr, err := browser.NewManager(ctx, browser.Config{
+		bmgr, err = browser.NewManager(ctx, browser.Config{
 			Headless:   cfg.Browser.Headless,
 			ProfileDir: cfg.Browser.ProfileDir,
 		})
@@ -80,8 +63,46 @@ func main() {
 		log.Fatalf("pool: %v", err)
 	}
 	defer relayPool.Close()
+
+	// Connect to relays before TUN — avoids DNS/route bootstrap deadlocks (native + browser).
+	log.Printf("connecting to relays (before tun)…")
 	if err := relayPool.Start(ctx); err != nil {
 		log.Fatalf("pool start: %v", err)
+	}
+
+	iface, err := tun.Open(tun.Config{
+		Name:    cfg.TUN.Name,
+		LocalIP: cfg.TUN.LocalIP,
+		PeerIP:  cfg.TUN.PeerIP,
+		MTU:     cfg.TUN.MTU,
+	})
+	if err != nil {
+		log.Fatalf("tun: %v", err)
+	}
+	defer iface.Close()
+
+	if len(cfg.TUN.Routes) > 0 {
+		if err := tun.AddRoutes(iface.Name(), cfg.TUN.Routes); err != nil {
+			log.Fatalf("routes: %v", err)
+		}
+		log.Printf("tun routes applied: %v", cfg.TUN.Routes)
+	}
+
+	bypass, err := cfg.BootstrapBypass()
+	if err != nil {
+		log.Fatalf("bypass: %v", err)
+	}
+	if len(bypass) > 0 {
+		if err := tun.AddBypassRoutes(bypass); err != nil {
+			log.Fatalf("bypass routes: %v", err)
+		}
+		log.Printf("bypass (relay direct): %v", bypass)
+	}
+
+	for _, r := range cfg.TUN.Routes {
+		if dev, err := tun.RouteDev(r); err == nil {
+			log.Printf("route check %s → dev %s", r, dev)
+		}
 	}
 
 	mode := "single-relay"

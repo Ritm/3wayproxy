@@ -1,0 +1,114 @@
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: linear-gradient(145deg, #1b4332 0%, #081c15 55%, #0d1b2a 100%);
+  color: #e8f0e8;
+  min-height: 100vh;
+}
+
+header, footer {
+  text-align: center;
+  padding: 1rem 1.5rem;
+}
+
+header h1 { margin: 0.2rem 0; font-weight: 600; }
+.tagline { opacity: 0.85; margin: 0; }
+
+main {
+  max-width: 520px;
+  margin: 0 auto 2rem;
+  padding: 0 1rem;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 1.25rem;
+  backdrop-filter: blur(6px);
+}
+
+.hidden { display: none !important; }
+
+.btn-row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.75rem; }
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 0.65rem 1.1rem;
+  font-size: 1rem;
+  cursor: pointer;
+  background: #3d5a45;
+  color: #fff;
+}
+.btn:hover { filter: brightness(1.1); }
+.btn.primary { background: #2d6a4f; }
+.btn.accent { background: #40916c; font-weight: 600; }
+.btn.danger { background: #9b2226; }
+
+.status {
+  margin-top: 1rem;
+  padding: 0.6rem;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 0.95rem;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  width: min(100%, 400px);
+  aspect-ratio: 1;
+  margin: 1rem auto;
+  border: 3px solid #1b4332;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.square {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(1.4rem, 5vw, 2.2rem);
+  cursor: pointer;
+  user-select: none;
+}
+.square.light { background: #f0d9b5; color: #1a1a1a; }
+.square.dark { background: #b58863; color: #1a1a1a; }
+.square.selected { outline: 3px solid #ffd166; outline-offset: -3px; }
+.square.legal { box-shadow: inset 0 0 0 4px rgba(64, 145, 108, 0.7); }
+.square.last-move { background-color: #cdd26a !important; }
+
+.game-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.95rem;
+  opacity: 0.9;
+}
+
+.game-message {
+  text-align: center;
+  min-height: 1.5rem;
+  font-weight: 500;
+}
+
+.promo-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+.promo-bar button {
+  padding: 0.35rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid #40916c;
+  background: transparent;
+  color: #b7e4c7;
+  cursor: pointer;
+}
+
+footer a { color: #95d5b2; font-size: 0.85rem; }

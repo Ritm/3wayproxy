@@ -269,7 +269,7 @@ func (p *Pool) rotateLoop(ctx context.Context) {
 }
 
 func (p *Pool) churnLoop(ctx context.Context) {
-	if len(p.cfg.Endpoints) < 2 {
+	if p.cfg.ChurnEvery <= 0 || len(p.cfg.Endpoints) < 2 {
 		return
 	}
 	tick := time.NewTicker(p.cfg.ChurnEvery)

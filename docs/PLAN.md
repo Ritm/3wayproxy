@@ -58,10 +58,10 @@ go test ./...
 
 **Задачи**
 
-- [x] `shared/rotate/` + `shared/pool/` — 2 active, 1 idle
-- [x] client + aggregator: 3 WSS, шардирование фрагментов
-- [x] WSS churn + RESUME
-- [ ] Retransmit: ACK `need_retx` (отложено)
+- `shared/rotate/` + `shared/pool/` — 2 active, 1 idle
+- client + aggregator: 3 WSS, шардирование фрагментов
+- WSS churn + RESUME
+- Retransmit: ACK `need_retx` (отложено)
 
 **Критерий готовности**
 

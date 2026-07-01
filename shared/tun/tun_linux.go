@@ -52,7 +52,7 @@ func Open(cfg Config) (*water.Interface, error) {
 	return iface, nil
 }
 
-// AddRoutes installs additional routes via the TUN device.
+// AddRoutes installs host routes via the TUN device (replaces any stale bypass entry).
 func AddRoutes(dev string, routes []string) error {
 	for _, r := range routes {
 		if r == "" {
@@ -62,13 +62,10 @@ func AddRoutes(dev string, routes []string) error {
 		if !strings.Contains(dst, "/") {
 			dst = dst + "/32"
 		}
-		args := append([]string{"route", "add"}, strings.Fields(dst)...)
+		args := append([]string{"route", "replace"}, strings.Fields(dst)...)
 		args = append(args, "dev", dev)
 		if out, err := exec.Command("ip", args...).CombinedOutput(); err != nil {
-			if strings.Contains(string(out), "File exists") {
-				continue
-			}
-			return fmt.Errorf("ip route add %s: %w: %s", r, err, out)
+			return fmt.Errorf("ip route replace %s dev %s: %w: %s", r, dev, err, out)
 		}
 	}
 	return nil
