@@ -1,10 +1,15 @@
+# Monorepo → Amvera (Python pip, без Docker).
+# Amvera тянет весь GitHub-репозиторий; код relay лежит в deploy/amvera/.
 meta:
-  environment: docker
+  environment: python
   toolchain:
-    name: docker
+    name: pip
+    version: "3.11"
 
 build:
-  dockerfile: deploy/Dockerfile
+  requirementsPath: deploy/amvera/requirements.txt
+  useCache: false
 
 run:
+  scriptName: deploy/amvera/run.py
   containerPort: 80

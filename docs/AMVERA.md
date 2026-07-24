@@ -190,61 +190,51 @@ cp "$LOCAL/deploy/amvera/run.py" "$LOCAL/deploy/amvera/amvera.yml" "$LOCAL/deplo
 
 ---
 
-## Деплой из GitHub (monorepo)
+## Деплой из GitHub (monorepo) — основной способ
 
-Репозиторий **3wayproxy** — monorepo. На Amvera нужен **только relay**, не весь проект.
+**Docker не нужен.** Amvera — Python (pip). Webhook тянет весь `Ritm/3wayproxy`; корневой `amvera.yml` указывает на код в `deploy/amvera/`:
 
-**Не делайте** `git push amvera main:master` из корня monorepo — на Amvera попадут `client/`, `aggregator/`, `docs/` и т.д. Docker-сборка из корня (`deploy/Dockerfile`) всё равно копирует только relay, но репозиторий на сервере будет лишним и тяжёлым.
+```yaml
+meta:
+  environment: python
+  toolchain:
+    name: pip
+    version: "3.11"
+build:
+  requirementsPath: deploy/amvera/requirements.txt
+  useCache: false
+run:
+  scriptName: deploy/amvera/run.py
+  containerPort: 80
+```
 
-### Правильный push на Amvera (relay-only)
+`run.py` сам находит `deploy/amvera/app/` рядом с собой.
+
+### Перед push в GitHub (если меняли relay или game)
 
 ```bash
-bash deploy/amvera/push.sh https://git.amvera.ru/ritm/rel3
-# или, если remote уже есть:
-bash deploy/amvera/push.sh amvera-relay0
+bash deploy/amvera/pack.sh   # копирует relay/app + game → deploy/amvera/
+git add deploy/amvera amvera.yml
+git commit -m "..."
+git push origin main         # webhook → pull + pip-сборка на всех 3 приложениях
 ```
 
-Скрипт собирает плоскую структуру (через `pack.sh`) и **force-push** в `master` на Amvera. В корне Amvera остаётся только:
+### Три приложения Amvera = три webhook на один репозиторий
 
-```text
-amvera.yml, requirements.txt, run.py, app/, game/
-```
+| Приложение | `RELAY_SHARD_ID` |
+| ---------- | ---------------- |
+| relay-ritm | `0`              |
+| rel2-ritm  | `1`              |
+| rel3-ritm  | `2`              |
 
-Повторите для каждого из трёх приложений (свой URL).
+В каждом: GitHub, ветка **`main`**, event **Push**, свой webhook URL + секрет. Проект в Amvera должен быть **Python**, не Docker.
 
-### Шаги (один shard = одно приложение Amvera)
+### Ручная загрузка / прямой push в Amvera (без GitHub)
 
-1. [Amvera](https://amvera.ru) → **Создать проект** → git Amvera (URL на вкладке «Репозиторий»).
-2. Локально: `bash deploy/amvera/push.sh <URL проекта>`.
-3. **Переменные окружения** (для каждого из 3 приложений свой shard):
-
-  | Приложение | `RELAY_SHARD_ID` |
-  | ---------- | ---------------- |
-  | relay-ritm | `0`              |
-  | rel2-ritm  | `1`              |
-  | rel3-ritm  | `2`              |
-
-4. Дождаться **«Успешно развернуто»** на вкладке сборки.
-5. Привязать домен (или использовать `*.amvera.io`).
-
-### Обновление relay после изменений в monorepo
-
-```bash
-git push origin main                       # GitHub
-bash deploy/amvera/push.sh amvera-relay0   # каждый shard отдельно
-```
-
-GitHub webhook на monorepo для Amvera **не обязателен**, если используете `push.sh`.
-
-### Три relay — три проекта
-
-Один репозиторий GitHub, **три отдельных приложения** Amvera с разными доменами и `RELAY_SHARD_ID=0/1/2`.
-
-### Альтернатива без git push
+Как раньше — плоская папка:
 
 ```bash
 bash deploy/amvera/pack.sh
-# загрузить deploy/amvera-upload/ через веб-интерфейс Amvera → Code
+# содержимое deploy/amvera-upload/ → Code
+# или: bash deploy/amvera/push.sh https://git.amvera.ru/ritm/rel3
 ```
-
-Или git remote Amvera вручную (см. [документация Amvera](https://amvera.ru/doc_for_git)) — но только содержимое `amvera-upload/`, не monorepo.
