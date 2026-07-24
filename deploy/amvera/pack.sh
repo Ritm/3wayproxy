@@ -13,6 +13,7 @@ cp "$ROOT/deploy/amvera/run.py" \
    "$ROOT/deploy/amvera/requirements.txt" \
    "$ROOT/deploy/amvera/amvera.yml" \
    "$OUT/"
+find "$OUT" -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 
 echo "Готово: $OUT"
 echo "Загрузите ВСЁ содержимое этой папки в корень Code на Amvera:"

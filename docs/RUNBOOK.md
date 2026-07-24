@@ -38,10 +38,12 @@ make build
 
 **Важно — разные пути WebSocket:**
 
-| Компонент   | Путь WS            |
-|-------------|--------------------|
-| **client**  | `/ws/play`         |
+
+| Компонент      | Путь WS         |
+| -------------- | --------------- |
+| **client**     | `/ws/play`      |
 | **aggregator** | `/ws/spectator` |
+
 
 Перепутать = client «зависнет» после `carrier: native` (ждёт handshake ack, которого spectator не шлёт).
 
@@ -125,7 +127,6 @@ browser:
 **Важно:** `game/carrier/ws_carrier.js` выполняется **на relay (Amvera)**, не на ПК. После обновления файла — **перезалить на все 3 приложения Amvera** и пересобрать.
 
 - При `carrier: browser` **churn отключён** автоматически (reconnect Playwright ~1 с рвёт TCP).
-
 - Client ходит на **relay (Amvera)**, не на aggregator — bypass aggregator **не помогает**.
 - В `bypass_routes` — только **IP relay** (или авто из `relays[].ws`). Сайты из `tun.routes` (2ip.ru и т.д.) в bypass **не** добавлять.
 - Маршруты `tun.routes` применяются **после** подключения к relay.
